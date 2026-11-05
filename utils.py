@@ -1,13 +1,16 @@
 import imageio.v3 as iio
 import numpy as np
 
+# Fra one-hot (H, W, klasser) tilbake til ett klassenummer per piksel (H, W)
 def one_hot_decode(label_3D: np.ndarray) -> np.ndarray:
   """
   Converts back from one-hot encoded format (label_3D)
   to original class labels for each pixel (2D)
   """
+  # Velger klassen med høyest verdi (den som er True) for hver piksel
   return np.argmax(label_3D, axis=-1)
 
+# Fra RGB-bilde til one-hot: ett lag per klasse, True der pikselen har klassens farge
 def one_hot_encode(label_2D: np.ndarray, label_values: np.ndarray) -> np.ndarray:
     """
     Converts a segmentation image label array (label_2D) to one-hot format
@@ -22,13 +25,17 @@ def one_hot_encode(label_2D: np.ndarray, label_values: np.ndarray) -> np.ndarray
     """
     semantic_map = []
     for color in label_values:
+        # Sammenligner hver piksel med fargen, kanal for kanal (R, G, B)
         equality = np.equal(label_2D, color)
+        # True bare hvis alle tre kanalene stemmer
         class_map = np.all(equality, axis=-1)
         semantic_map.append(class_map)
+    # Legger lagene oppå hverandre: (H, W, antall klasser)
     semantic_map = np.stack(semantic_map, axis=-1)
 
     return semantic_map
 
+# RGB-bilde -> rutenett med klassenumre (brukes når kartet leses inn)
 def make_2d(map_3d: np.ndarray, palette_array: np.ndarray) -> np.ndarray:
     """
     Converts RGB images to images with number of class as value at [i,j]
@@ -46,6 +53,7 @@ def make_2d(map_3d: np.ndarray, palette_array: np.ndarray) -> np.ndarray:
     # we create 2D representation, where every pixel has the value of its class
     return one_hot_decode(replaced_image_onehot) # size (H, W) - 2D
 
+# Rutenett med klassenumre -> RGB-bilde (brukes når kartet tegnes)
 def make_3d(map_2d: np.ndarray, palette_array: np.ndarray) -> np.ndarray:
     """
     Convert a 2D image where each pixel represents a class label
@@ -60,26 +68,33 @@ def make_3d(map_2d: np.ndarray, palette_array: np.ndarray) -> np.ndarray:
     # Returns
         RGB image (H, W, 3)
     """
+    # Slår opp fargen til hvert klassenummer i paletten
     return palette_array[map_2d.astype(np.uint8)]
 
 
+# Leser PNG-filen som en numpy-array med RGB-verdier
 def read_png_file(image_path: str, printDebug: bool = True) -> np.ndarray:
     original_image_matrix = iio.imread(image_path)
 
+    # Fjerner eventuell fjerde kanal (gjennomsiktighet), beholder bare RGB
     if original_image_matrix.ndim > 2 and original_image_matrix.shape[-1] > 3:
         if printDebug:
             print(f'image has more than 3 channels, only first 3 channels are used there are {original_image_matrix.shape} channels')
         original_image_matrix = original_image_matrix[:, :, :3]
     return original_image_matrix
 
+# Sjekker om posisjonen (rad, kolonne) er innenfor kartet
 def is_valid_idx(image_2D: np.ndarray, selected_idx: int) -> bool:
+    # Negativ rad/kolonne betyr utenfor kartet
     if selected_idx[0] < 0 or selected_idx[1] < 0:
         return False
+    # Må også være mindre enn antall rader og kolonner
     if selected_idx[0] < image_2D.shape[0]:
         if selected_idx[1] < image_2D.shape[1]:
             return True
     return False
 
+# Bytter plass på to klasser; brukes til å flytte start (1) til en tilfeldig landrute (2)
 def swap_values(arr: np.ndarray, value1: int, value2: int) -> np.ndarray:
     """
     Swaps occurrences of two specific values (value1 and value2)
@@ -98,6 +113,7 @@ def swap_values(arr: np.ndarray, value1: int, value2: int) -> np.ndarray:
     value1, value2 = int(value1), int(value2)
 
     # Step 1: Find the first position of value1 and change it to value2
+    # (den gamle startruten blir land)
     pos_value1 = np.argwhere(arr == value1) # returns 2D array
     if pos_value1.size > 0:
         arr[pos_value1[0][0], pos_value1[0][1]] = value2
@@ -106,6 +122,7 @@ def swap_values(arr: np.ndarray, value1: int, value2: int) -> np.ndarray:
     pos_value2 = np.argwhere(arr == value2) # returns 2D array
 
     # Step 3: Randomly select a position of value2 that is not the original value1's position
+    # (en tilfeldig landrute blir ny start)
     if len(pos_value2) > 1:
         # filter out the position of former value1 (pos_value1) which now also contains value2
         pos_value2 = pos_value2[np.all(pos_value2 != pos_value1[0], axis=1)]
